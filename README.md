@@ -14,7 +14,7 @@
 ```/flink_lib``` - JDBC-драйверы для работы Flink, Kafka, PostgreSQL 
 
 ```/flink_processor```   
-- ```processor.sql``` - файл для определения таблиц-источников (Kafka) и приёмников (PostgreSQL), выполнения потоковой трансформации данных из JSON-сообщений Kafka в нормализованную схему "звезда"
+- ```flink_job.py``` - главный файл потоковой обработки (PyFlink DataStream API): читает JSON из Kafka, преобразует и загружает данные в PostgreSQL
 
 ```/init_sql_scripts``` - SQL-скрипты для инициализации PostgreSQL (создание таблиц схемы "звезда")
 
@@ -35,14 +35,20 @@
 
 ## Принцип работы
 Система построена на потоковой обработке данных с использованием Apache Kafka, Apache Flink и PostgreSQL.  
-Сначала Python-скрипт ```producer.py``` читает строки из csv-файлов, преобразует каждую строку в формат JSON и отправляет сообщения в Kafka-топик ```mock_data_input```.   
-Далее запущенная в Flink SQL-джоба (```processor.sql```) непрерывно потребляет сообщения из Kafka, выполняет трансформацию данных: десериализует JSON, приводит типы, выделяет уникальные записи для таблиц измерений и вставляет их в соответствующие таблицы в PostgreSQL, а также формирует таблицу фактов, связывающую все измерения.  
-В результате в базе данных PostgreSQL автоматически наполняется схема "звезда", готовая для аналитических запросов.
+Сначала Python-скрипт ```producer.py``` читает строки из CSV-файлов, преобразует каждую строку в JSON и отправляет сообщения в Kafka-топик mock_data_input.
+Далее запущенная в Flink DataStream job (```flink_job.py```) непрерывно потребляет сообщения из Kafka, десериализует JSON, приводит типы, выделяет уникальные записи для таблиц измерений и формирует таблицу фактов, записывая всё в PostgreSQL через JDBC Sink.
 
 ## Запуск проекта
 Для удобства сразу откройте 3 терминала в корневой папке проекта.
 
-### 1. Запуск инфраструктуры
+### 1. Сборка образа Flink с PyFlink
+В терминале 1 выполните:  
+```bash
+docker compose build jobmanager taskmanager
+```
+Это создаст кастомный образ Flink, содержащий Python и PyFlink.
+
+### 2. Запуск инфраструктуры
 В терминале 1 выполните команду:  
 ```bash
 docker compose up -d postgres zookeeper kafka jobmanager taskmanager
@@ -58,7 +64,7 @@ docker compose ps
 Дождитесь статусов ```running``` или ```healthy```. Это может занять пару минут.
 Если возникает ошибка о том, что какой-то порт уже занят, измените порт в docker-compose.yml или временно остановите другие контейнеры, которые с ним взаимодействуют.
 
-### 2. Создание Kafka topic
+### 3. Создание Kafka topic
 В терминале 1 выполните команду:  
 ```bash
 docker exec kafka kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic mock_data_input --partitions 1 --replication-factor 1
@@ -71,17 +77,18 @@ docker exec kafka kafka-topics --bootstrap-server kafka:29092 --list
 Команда должна вывести:  
 ```mock_data_input```
 
-### 3. Запуск Flink-job
+### 4. Запуск Flink-job
 В терминале 2 выполните команду:
 ```bash
-docker exec -it jobmanager /opt/flink/bin/sql-client.sh -f /opt/flink/usrlib/processor.sql
+docker exec -it jobmanager /opt/flink/bin/flink run -d -py /opt/flink/usrlib/flink_job.py
 ```
+Вы должны увидеть Job has been submitted with JobID ...
 
 Вы можете проверить работоспособность Flink, перейдя в браузере по ссылке:  
 ```http://localhost:8081```  
 В Flink Web UI среди Jobs / Running Jobs должна появиться наша запущенная джоба.
 
-### 4. Запуск producer
+### 5. Запуск producer
 В терминале 3 выполните команду:
 ```bash
 docker compose run --rm kafka-producer
@@ -98,7 +105,7 @@ Sent 10000 messages.
 
 После появления последней надписи можно перейти к проверке.
 
-### 5. Проверка PostgreSQL
+### 6. Проверка PostgreSQL
 В терминале 1 (или новом) зайдите в консоль PostgreSQL с помощью команды:
 ```bash
 docker exec -it postgres psql -U postgres -d bigdata_flink
@@ -147,7 +154,7 @@ limit 10;
 \q
 ```
 
-### 6. Завершение работы
+### 7. Завершение работы
 В Flink Web UI перейдите в Jobs → Running Jobs → выбрать job → Cancel Job. Так вы остановите Flink-джобу, работающую в running-режиме.
 
 Остановите окружение (в терминале 1) с удалением volumes:
