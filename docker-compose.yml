@@ -64,7 +64,10 @@ services:
     command: sh -c "pip install --quiet -r requirements.txt && python producer.py"
 
   jobmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    image: bigdataflink-pyflink:1.18.1
     container_name: jobmanager
     ports:
       - "8081:8081"
@@ -74,14 +77,17 @@ services:
     volumes:
       - ./flink_processor:/opt/flink/usrlib
       - ./flink_lib/flink-sql-connector-kafka-3.1.0-1.18.jar:/opt/flink/lib/flink-sql-connector-kafka-3.1.0-1.18.jar
-      - ./flink_lib/flink-connector-jdbc-3.2.0-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.2.0-1.18.jar
+      - ./flink_lib/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
       - ./flink_lib/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
     depends_on:
       - kafka
       - postgres
 
   taskmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    image: bigdataflink-pyflink:1.18.1
     container_name: taskmanager
     depends_on:
       - jobmanager
@@ -91,7 +97,7 @@ services:
     volumes:
       - ./flink_processor:/opt/flink/usrlib
       - ./flink_lib/flink-sql-connector-kafka-3.1.0-1.18.jar:/opt/flink/lib/flink-sql-connector-kafka-3.1.0-1.18.jar
-      - ./flink_lib/flink-connector-jdbc-3.2.0-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.2.0-1.18.jar
+      - ./flink_lib/flink-connector-jdbc-3.1.2-1.18.jar:/opt/flink/lib/flink-connector-jdbc-3.1.2-1.18.jar
       - ./flink_lib/postgresql-42.7.3.jar:/opt/flink/lib/postgresql-42.7.3.jar
 
 volumes:
